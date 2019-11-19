@@ -1,14 +1,14 @@
-﻿//using HtmlAgilityPack;
-using Fizzler;
+﻿//#define STRING
+//#define SERIALIZE
+
 using Fizzler.Systems.HtmlAgilityPack;
 using HtmlAgilityPack;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Net.Http;
-using System.Text;
-using System.Threading.Tasks;
+using System.Text.RegularExpressions;
+using System.Xml.Serialization;
 
 namespace HtmlParser
 {
@@ -16,17 +16,47 @@ namespace HtmlParser
     {
         static void Main(string[] args)
         {
-            ParseNwnLexicon();
+            Console.Write("Press enter to start");
 
+            ConsoleKeyInfo key;
+
+            do
+            {
+                key = Console.ReadKey();
+            }
+            while (!(key.Modifiers == 0 && key.Key == ConsoleKey.Enter));
+
+            Console.Clear();
+            Console.WriteLine("Processing...");
+
+            ParseNwnLexicon();
+            //System.Threading.Thread.Sleep(2000);
+
+            Console.WriteLine("\nDone!\n(press any key)");
+            Console.ReadKey();
         }
 
         static void ParseNwnLexicon()
         {
+            String path = $"{DebugHelper.PATH}nwnlexicon.txt";
+
+#if !STRING
             String uri = "https://nwnlexicon.com/index.php?title=Category:Resources_Items";
 
             HtmlWeb web = new HtmlWeb();
 
-            var htmlDoc = web.Load(uri);
+            HtmlDocument htmlDoc = web.Load(uri);
+
+#if SERIALIZE
+            String html = htmlDoc.Text;
+            File.WriteAllText(path, html);
+#endif
+#else
+            String html = File.ReadAllText(path);
+
+            HtmlDocument htmlDoc = new HtmlDocument();
+            htmlDoc.LoadHtml(html);
+#endif
 
             var rows = htmlDoc.DocumentNode.QuerySelectorAll("table tr");
 
@@ -40,10 +70,10 @@ namespace HtmlParser
 
                 ItemCategory item = new ItemCategory
                 {
-                    Category = a.InnerText.Replace("\n", ""),
+                    Category = a.InnerText.Replace("\n", "").Trim(),
                 };
 
-                item.CategoryDescription = r.QuerySelectorAll("td").LastOrDefault().InnerText.Replace("\n", "");
+                item.CategoryDescription = r.QuerySelectorAll("td").LastOrDefault().InnerText.Replace("\n", "").Trim();
                 item.Href = a.Attributes["href"]?.Value;
 
                 items.Add(item);
@@ -51,24 +81,33 @@ namespace HtmlParser
 
             foreach (var itemCategory in items)
             {
+                Console.Write($"...{itemCategory.Category}... ");
                 itemCategory.Items = ParseItems(itemCategory.Href);
-
-                //Console.WriteLine($"{item.Category} \t {item.CategoryDescription} \t {item.Href}");
+                Console.WriteLine("+");
             }
 
             foreach (var itemCat in items)
             {
-                String str = $"{itemCat.CategoryDescription}\n\n";
+                String[] lines = new String[itemCat.Items.Count * 3 + 1];
+                int i = 0;
 
+                lines[i++] = $"{itemCat.CategoryDescription}\n\n";
+
+                int num = 1;
                 foreach (var item in itemCat.Items)
                 {
-                    str += $"{item.Name} ({item.ResRef} | {item.Tag}) {item.GPValue}\n";
+                    String space = num < 10
+                        ? "   "
+                        : "\t";
+
+                    lines[i++] = $"{num++}) {item.Name}";
+                    lines[i++] = $"{space}{item.Tag}   {item.ResRef}";
+                    lines[i++] = $"{space}{item.GPValue}\n";
                 }
 
-                itemCat.Category = itemCat.Category.Replace("/", "");
-                itemCat.Category = itemCat.Category.Replace(@"\", "");
+                itemCat.Category = itemCat.Category.Replace("/", "").Replace(@"\", "").Trim();
 
-                File.WriteAllText($@"D:\Other\NWN\Ignis Mare\aurora\loot parser\{itemCat.Category}.txt", str);
+                File.WriteAllLines($@"D:\Other\NWN\Ignis Mare. Design\aurora\loot parser\{itemCat.Category}.txt", lines);
             }
         }
 
@@ -90,10 +129,10 @@ namespace HtmlParser
 
                 Item item = new Item
                 {
-                    Name = tds[0].InnerText.Replace("\n", ""),
-                    ResRef = tds[1].InnerText.Replace("\n", ""),
-                    Tag = tds[2].InnerText.Replace("\n", ""),
-                    GPValue = tds[3].InnerText.Replace("\n", ""),
+                    Name = tds[0].InnerText.Replace("\n", "").Trim(),
+                    ResRef = tds[1].InnerText.Replace("\n", "").Trim(),
+                    Tag = tds[2].InnerText.Replace("\n", "").Trim(),
+                    GPValue = tds[3].InnerText.Replace("\n", "").Trim(),
                 };
 
                 result.Add(item);
@@ -117,5 +156,61 @@ namespace HtmlParser
         public String ResRef { get; set; }
         public String Tag { get; set; }
         public String GPValue { get; set; }
+    }
+
+    static class DebugHelper
+    {
+        public const String PATH = @"C:\StringData\";
+
+        public static void Serialize<T>(T obj, String fileName, String path = PATH)
+        {
+            path = ConcatPath(path, fileName);
+
+            XmlSerializer xmlSerializer = new XmlSerializer(typeof(T));
+            using (StringWriter textWriter = new StringWriter())
+            {
+                xmlSerializer.Serialize(textWriter, obj);
+                String resultStr = textWriter.ToString();
+                File.WriteAllText(path, resultStr);
+            }
+        }
+
+        public static T Deserialize<T>(String fileName, String path = PATH)
+        {
+            path = ConcatPath(path, fileName);
+
+            if (!File.Exists(path))
+                return default(T);
+
+            String str = File.ReadAllText(path);
+            XmlSerializer xmlSerializer = new XmlSerializer(typeof(T));
+            using (StringReader textReader = new StringReader(str))
+            {
+                T obj = (T)xmlSerializer.Deserialize(textReader);
+
+                return obj;
+            }
+        }
+
+        static String ConcatPath(String path, String fileName)
+        {
+            if (String.IsNullOrWhiteSpace(path))
+                throw new ArgumentNullException(nameof(path));
+            if (String.IsNullOrWhiteSpace(fileName))
+                throw new ArgumentNullException(nameof(fileName));
+
+            if (!path.EndsWith("\\"))
+                path += "\\";
+
+            if (!Regex.IsMatch(fileName, @".+\.\w+", RegexOptions.IgnoreCase))
+                fileName += ".txt";
+
+            if (!Directory.Exists(path))
+                Directory.CreateDirectory(path);
+
+            path += fileName;
+
+            return path;
+        }
     }
 }
