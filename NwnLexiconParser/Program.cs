@@ -82,7 +82,7 @@ namespace HtmlParser
             foreach (var itemCategory in items)
             {
                 Console.Write($"...{itemCategory.Category}... ");
-                itemCategory.Items = ParseItems(itemCategory.Href);
+                itemCategory.Items = ParseItems(itemCategory.Href).OrderBy(x => x.GPValue).ToList();
                 Console.WriteLine("+");
             }
 
@@ -107,7 +107,7 @@ namespace HtmlParser
 
                 itemCat.Category = itemCat.Category.Replace("/", "").Replace(@"\", "").Trim();
 
-                File.WriteAllLines($@"D:\Other\NWN\Ignis Mare. Design\aurora\loot parser\{itemCat.Category}.txt", lines);
+                File.WriteAllLines($@"D:\Other\NWN\Ignis Mare. Design\aurora\loot\nwnlexicon (default)\{itemCat.Category}.txt", lines);
             }
         }
 
@@ -132,8 +132,10 @@ namespace HtmlParser
                     Name = tds[0].InnerText.Replace("\n", "").Trim(),
                     ResRef = tds[1].InnerText.Replace("\n", "").Trim(),
                     Tag = tds[2].InnerText.Replace("\n", "").Trim(),
-                    GPValue = tds[3].InnerText.Replace("\n", "").Trim(),
                 };
+
+                if (uint.TryParse(tds[3].InnerText.Replace("\n", "").Replace(",", "").Trim(), out uint price))
+                    item.GPValue = price;
 
                 result.Add(item);
             }
@@ -155,7 +157,7 @@ namespace HtmlParser
         public String Name { get; set; }
         public String ResRef { get; set; }
         public String Tag { get; set; }
-        public String GPValue { get; set; }
+        public uint GPValue { get; set; }
     }
 
     static class DebugHelper
